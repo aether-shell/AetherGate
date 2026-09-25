@@ -1,5 +1,6 @@
 <template>
-  <div class="relative">
+  <ManagedVersionBadge v-if="isManagedProduct" :version="currentVersion" />
+  <div v-else class="relative">
     <!-- Admin: Full version badge with dropdown -->
     <template v-if="isAdmin">
       <button
@@ -650,6 +651,10 @@ import {
 } from '@/api/admin/system'
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
+import ManagedVersionBadge from './ManagedVersionBadge.vue'
+
+// 源码固定产品类型，旧版本缓存不能重新暴露官方安装和回退按钮。
+const isManagedProduct = true
 
 const GITHUB_REPO = 'Wei-Shaw/sub2api'
 // Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)

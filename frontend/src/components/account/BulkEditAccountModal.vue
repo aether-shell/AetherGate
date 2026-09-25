@@ -885,8 +885,8 @@
         </div>
       </div>
 
-      <!-- OpenAI OAuth Codex CLI only -->
-      <div v-if="allOpenAIOAuth" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <!-- OpenAI OAuth/API Key client restriction -->
+      <div v-if="allOpenAIPassthroughCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-openai-codex-cli-only-label"
@@ -929,8 +929,8 @@
         </div>
       </div>
 
-      <!-- OpenAI OAuth: Codex app-server -->
-      <div v-if="allOpenAIOAuth" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <!-- OpenAI OAuth/API Key: Codex app-server -->
+      <div v-if="allOpenAIPassthroughCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-openai-codex-app-server-label"
@@ -2073,7 +2073,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     updates.upstream_billing_probe_enabled = upstreamBillingAutoProbeMode.value === 'enabled'
   }
 
-  if (enableCodexCLIOnly.value) {
+  if (enableCodexCLIOnly.value && allOpenAIPassthroughCapable.value) {
     const extra = ensureExtra()
     extra.codex_cli_only = codexCLIOnlyEnabled.value
   }
@@ -2082,6 +2082,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
   // 与 Create/Edit 语义对齐，避免在父开关关闭的账号上写入无意义的孤立字段。
   if (
     enableCodexCLIOnlyAppServer.value &&
+    allOpenAIPassthroughCapable.value &&
     enableCodexCLIOnly.value &&
     codexCLIOnlyEnabled.value
   ) {

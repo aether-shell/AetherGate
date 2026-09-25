@@ -36,6 +36,19 @@ type systemHandlerUpdateServiceStub struct {
 	rollbackVersionsCall  int
 }
 
+func TestAetherGateUpdateAPIsRejectBeforeLock(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSystemHandler(service.NewUpdateService(nil, nil, "test", "release"), nil)
+	for _, handler := range []gin.HandlerFunc{h.PerformUpdate, h.GetRollbackVersions, h.Rollback} {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader("{}"))
+		handler(c)
+		require.Equal(t, http.StatusForbidden, recorder.Code)
+		require.Contains(t, recorder.Body.String(), "SELF_UPDATE_DISABLED")
+	}
+}
+
 func (s *systemHandlerUpdateServiceStub) CheckUpdate(_ context.Context, force bool) (*service.UpdateInfo, error) {
 	s.checkForces = append(s.checkForces, force)
 	return s.updateInfo, s.checkErr

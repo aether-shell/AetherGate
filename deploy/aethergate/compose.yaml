@@ -1,0 +1,59 @@
+services:
+  aethergate:
+    # Set to the verified digest from the Actions release.json artifact.
+    image: ${AETHERGATE_IMAGE:?Set a verified ghcr.io/aether-shell/aethergate@sha256 digest}
+    restart: unless-stopped
+    labels:
+      cc.aethergate.product: aethergate
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - app-data:/app/data
+    environment:
+      AUTO_SETUP: "true"
+      DATABASE_HOST: postgres
+      DATABASE_USER: aethergate
+      DATABASE_DBNAME: aethergate
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?required}
+      DATABASE_SSLMODE: disable
+      REDIS_HOST: redis
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?required}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?required}
+      JWT_SECRET: ${JWT_SECRET:?required}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    labels:
+      cc.aethergate.product: aethergate
+    environment:
+      POSTGRES_USER: aethergate
+      POSTGRES_DB: aethergate
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?required}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aethergate -d aethergate"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  app-data:
+  postgres-data:
+  redis-data:

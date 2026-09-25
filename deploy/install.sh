@@ -7,6 +7,9 @@
 
 set -e
 
+echo "AetherGate uses verified GHCR images. Follow docs/AETHERGATE.md; the inherited binary installer is disabled." >&2
+exit 1
+
 # Bash 4+ is required for associative arrays used by the localized message table.
 # Keep this guard before any Bash 4-only syntax so older shells fail with a clear hint.
 if [ -z "${BASH_VERSION:-}" ]; then

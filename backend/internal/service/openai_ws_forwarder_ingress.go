@@ -71,6 +71,14 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	firstClientMessage []byte,
 	hooks *OpenAIWSIngressHooks,
 ) (returnErr error) {
+	// The downstream socket is already upgraded; reject with a policy close,
+	// before acquiring an upstream connection, for every selected account.
+	result := s.detectCodexClientRestriction(c, account, firstClientMessage)
+	logCodexCLIOnlyDetection(ctx, c, account, getAPIKeyIDFromContext(c), result, firstClientMessage)
+	if result.Enabled && !result.Matched {
+		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
+		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, CodexClientRestrictionMessage(result), nil)
+	}
 	if s == nil {
 		return errors.New("service is nil")
 	}

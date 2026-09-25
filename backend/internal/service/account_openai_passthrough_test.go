@@ -114,7 +114,7 @@ func TestAccount_IsCodexCLIOnlyEnabled(t *testing.T) {
 		require.False(t, account.IsCodexCLIOnlyEnabled())
 	})
 
-	t.Run("非 OAuth 账号始终关闭", func(t *testing.T) {
+	t.Run("支持 OpenAI API Key，不扩展其他平台", func(t *testing.T) {
 		apiKeyAccount := &Account{
 			Platform: PlatformOpenAI,
 			Type:     AccountTypeAPIKey,
@@ -122,7 +122,7 @@ func TestAccount_IsCodexCLIOnlyEnabled(t *testing.T) {
 				"codex_cli_only": true,
 			},
 		}
-		require.False(t, apiKeyAccount.IsCodexCLIOnlyEnabled())
+		require.True(t, apiKeyAccount.IsCodexCLIOnlyEnabled())
 
 		otherPlatform := &Account{
 			Platform: PlatformAnthropic,

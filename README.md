@@ -1,3 +1,7 @@
+> **AetherGate** — direct sub2api fork with API Key account client restrictions
+> and GitHub-hosted managed releases. Use [the AetherGate build and deployment guide](docs/AETHERGATE.md).
+> The upstream documentation below is retained for reference; official images/installers are not AetherGate releases.
+
 <div align="center">
 
 <img src="assets/logo.svg" alt="Sub2API Logo" width="128" />

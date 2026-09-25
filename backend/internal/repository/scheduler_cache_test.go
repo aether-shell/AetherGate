@@ -8,6 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAetherGateSchedulerPreservesClientRestriction(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		extra := filterSchedulerExtra(map[string]any{"codex_cli_only": enabled, "codex_cli_only_allow_app_server": enabled})
+		require.Equal(t, enabled, extra["codex_cli_only"])
+		require.Equal(t, enabled, extra["codex_cli_only_allow_app_server"])
+	}
+}
+
 func TestFilterSchedulerCredentialsKeepsSubscriptionPlanType(t *testing.T) {
 	filtered := filterSchedulerCredentials(map[string]any{
 		"plan_type":     "plus",

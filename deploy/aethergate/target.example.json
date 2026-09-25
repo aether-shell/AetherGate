@@ -1,0 +1,13 @@
+{
+  "product": "aethergate",
+  "ssh": "aethergate-host",
+  "identity_file": "~/.ssh/id_ed25519_aethergate",
+  "project": "aethergate",
+  "mode": "install",
+  "service": "aethergate",
+  "database_service": "postgres",
+  "compose_file": "/opt/aethergate/compose.yaml",
+  "health_url": "http://127.0.0.1:8080/health",
+  "fresh_database": true,
+  "rollback_compatible": false
+}

@@ -3,9 +3,14 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   shell:
@@ -38,10 +43,10 @@ jobs:
           go version | grep -q 'go1.27.0'
       - name: Unit tests
         working-directory: backend
-        run: make test-unit
+        run: go test -p 2 -tags=unit ./...
       - name: Integration tests
         working-directory: backend
-        run: make test-integration
+        run: go test -p 2 -tags=integration ./...
 
   frontend:
     runs-on: ubuntu-latest
@@ -62,6 +67,10 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Frontend typecheck and critical vitest
         run: make test-frontend
+      - name: AetherGate UI regression and build
+        run: |
+          pnpm --dir frontend exec vitest run src/components/common/__tests__/VersionBadge.managed.spec.ts src/components/account/__tests__/CreateAccountModal.spec.ts src/components/account/__tests__/EditAccountModal.spec.ts src/components/account/__tests__/BulkEditAccountModal.spec.ts
+          pnpm --dir frontend run build
 
   golangci-lint:
     runs-on: ubuntu-latest
@@ -93,3 +102,5 @@ jobs:
       - run: python -m pip install -r .github/release-tools/requirements-release.txt
       - run: python -m unittest discover -s .github/release-tools -p 'test_release_matrix.py'
       - run: bash -n .github/release-tools/release-images.sh
+      - name: AetherGate release contracts
+        run: python3 -m unittest discover -s tools/aethergate -p 'test_*.py'

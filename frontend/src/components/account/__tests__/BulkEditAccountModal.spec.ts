@@ -349,10 +349,10 @@ describe('BulkEditAccountModal', () => {
     expect(wrapper.find('#bulk-edit-openai-ws-mode-enabled').exists()).toBe(false)
   })
 
-  it('OpenAI OAuth 批量编辑应提交 codex_cli_only 字段', async () => {
+  it.each([['oauth'], ['apikey'], ['oauth', 'apikey']])('OpenAI 批量编辑应提交 codex_cli_only 字段: %j', async (...selectedTypes) => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
-      selectedTypes: ['oauth']
+      selectedTypes
     })
 
     await wrapper.get('#bulk-edit-openai-codex-cli-only-enabled').setValue(true)

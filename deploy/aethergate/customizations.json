@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "repository": "aether-shell/AetherGate",
+  "source": "https://github.com/aether-shell/AetherGate",
+  "branch": "main",
+  "product": "aethergate",
+  "image": "ghcr.io/aether-shell/aethergate",
+  "upstream_commit": "a3eb7ef302961cba716dc78b39b93b60c467db0e",
+  "features": ["api-account-client-restriction", "managed-release"],
+  "required_workflows": ["backend-ci.yml", "security-scan.yml"]
+}

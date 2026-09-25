@@ -1,5 +1,17 @@
 .PHONY: build build-backend build-frontend test test-backend test-frontend test-frontend-critical
 
+# These targets orchestrate GitHub-hosted runners; they never compile locally.
+.PHONY: ag-verify ag-build ag-prepare ag-release
+ag-verify:
+	@python3 tools/aethergate/ag.py verify
+ag-build:
+	@python3 tools/aethergate/ag.py build
+ag-prepare:
+	@python3 tools/aethergate/ag.py prepare --run-id "$(AG_RUN_ID)" --target "$(AG_TARGET)" --prepared "$(AG_PREPARED)"
+ag-release:
+	@python3 tools/aethergate/ag.py release --target "$(AG_TARGET)" --prepared "$(AG_PREPARED)" $(if $(filter 1,$(AG_EXECUTE)),--execute,)
+AG_PREPARED ?= /tmp/aethergate-prepared.json
+
 FRONTEND_CRITICAL_VITEST := \
 	src/i18n/__tests__/localeKeyCompleteness.spec.ts \
 	src/api/__tests__/client.spec.ts \

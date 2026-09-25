@@ -1022,6 +1022,8 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		"openai_passthrough",
 		"openai_oauth_passthrough",
 		"codex_fingerprint_mode",
+		"codex_cli_only",
+		"codex_cli_only_allow_app_server",
 		"codex_fingerprint_seed",
 		"codex_5h_used_percent",
 		"codex_7d_used_percent",
