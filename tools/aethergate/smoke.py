@@ -26,7 +26,12 @@ def request(port, path, token=None, data=None, extra_headers=None, method=None):
         with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5) as response:
             return response.status, json.load(response)
     except urllib.error.HTTPError as error:
-        return error.code, json.load(error)
+        raw = error.read()
+        try:
+            payload = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            payload = {"raw": raw.decode("utf-8", "replace")}
+        return error.code, payload
 
 
 def container_endpoint(name, network):
