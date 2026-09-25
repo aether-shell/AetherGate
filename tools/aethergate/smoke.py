@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import secrets
-import socket
 import subprocess
 import sys
 import time
@@ -21,19 +20,23 @@ def request(port, path, token=None, data=None, extra_headers=None, method=None):
     if token:
         headers["Authorization"] = "Bearer " + token
     headers.update(extra_headers or {})
-    req = urllib.request.Request("http://127.0.0.1:" + port + path, headers=headers,
+    req = urllib.request.Request("http://" + port + path, headers=headers,
                                  data=json.dumps(data).encode() if data is not None else None, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5) as response:
             return response.status, json.load(response)
     except urllib.error.HTTPError as error:
         return error.code, json.load(error)
 
 
-def free_port():
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
+def container_endpoint(name, network):
+    # Linux runners can reach the internal bridge directly; no published ports
+    # or externally connected container network is needed.
+    info = json.loads(command("docker", "inspect", name))[0]
+    address = info["NetworkSettings"]["Networks"][network]["IPAddress"]
+    if not address:
+        raise RuntimeError("No internal address for " + name)
+    return address + ":8080"
 
 
 def main():
@@ -46,8 +49,6 @@ def main():
     assert "AetherGate " in version and revision in version and "product: aethergate" in version
     prefix = "ag-smoke-" + secrets.token_hex(4)
     names = [prefix + "-db", prefix + "-redis", prefix + "-app", prefix + "-upstream"]
-    app_port = free_port()
-    upstream_port = free_port()
     for key in ["POSTGRES_PASSWORD", "DATABASE_PASSWORD", "ADMIN_PASSWORD", "JWT_SECRET", "TOTP_ENCRYPTION_KEY"]:
         os.environ[key] = secrets.token_hex(32)
         print("::add-mask::" + os.environ[key], flush=True)
@@ -60,18 +61,18 @@ def main():
         command("docker", "run", "-d", "--name", names[0], "--network", prefix, "--network-alias", "postgres",
                 "-e", "POSTGRES_PASSWORD", "-e", "POSTGRES_USER=aethergate", "-e", "POSTGRES_DB=aethergate", "postgres:18-alpine")
         command("docker", "run", "-d", "--name", names[1], "--network", prefix, "--network-alias", "redis", "redis:7-alpine")
-        command("docker", "run", "-d", "--name", names[3], "--network", prefix, "--network-alias", "fake-upstream", "-p", f"127.0.0.1:{upstream_port}:8080",
+        command("docker", "run", "-d", "--name", names[3], "--network", prefix, "--network-alias", "fake-upstream",
                 "-v", str(Path(__file__).with_name("fake_upstream.py").resolve()) + ":/fake.py:ro", "python:3.12-alpine", "python", "/fake.py")
         for _ in range(30):
             if subprocess.run(["docker", "exec", names[0], "pg_isready", "-U", "aethergate"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
                 break
             time.sleep(1)
-        command("docker", "run", "-d", "--name", names[2], "--network", prefix, "-p", f"127.0.0.1:{app_port}:8080",
+        command("docker", "run", "-d", "--name", names[2], "--network", prefix,
                 "-e", "AUTO_SETUP=true", "-e", "DATABASE_HOST=postgres", "-e", "DATABASE_USER=aethergate", "-e", "DATABASE_DBNAME=aethergate",
                 "-e", "DATABASE_SSLMODE=disable", "-e", "DATABASE_PASSWORD", "-e", "REDIS_HOST=redis", "-e", "ADMIN_EMAIL=admin@aethergate.test",
                 "-e", "ADMIN_PASSWORD", "-e", "JWT_SECRET", "-e", "TOTP_ENCRYPTION_KEY", "-e", "RUN_MODE=simple",
                 "-e", "SECURITY_URL_ALLOWLIST_ENABLED=false", image)
-        port = str(app_port)
+        port = container_endpoint(names[2], prefix)
         for _ in range(90):
             try:
                 status, _ = request(port, "/health")
@@ -104,7 +105,7 @@ def main():
         assert status == 200, "Create smoke key failed"
         api_key = key["data"]["key"]
         print("::add-mask::" + api_key, flush=True)
-        upstream = str(upstream_port)
+        upstream = container_endpoint(names[3], prefix)
         before = request(upstream, "/count")[1]["calls"]
         body = {"model": "gpt-5.2", "input": "hello", "stream": False}
         status, error = request(port, "/v1/responses", api_key, body, {"User-Agent": "curl/8"})
@@ -119,6 +120,9 @@ def main():
         status, _ = request(port, "/v1/responses", api_key, body, {"User-Agent": "curl/8"})
         assert status == 200, "Disabled restriction still blocks after cache refresh"
         print("PASS: image identity, setup, login, managed update APIs; API account save/deny with zero calls/allow/disable through real gateway")
+    except Exception:
+        subprocess.run(["docker", "logs", "--tail", "80", names[2]], check=False)
+        raise
     finally:
         for name in reversed(names):
             subprocess.run(["docker", "rm", "-f", "-v", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
