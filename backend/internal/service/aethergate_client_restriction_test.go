@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -11,6 +13,32 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAetherGateAPIKeyAllowedClientReachesUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, enabled := range []bool{true, false} {
+		upstream := &httpUpstreamRecorder{resp: &http.Response{
+			StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader("{\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}")),
+		}}
+		svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+		account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1,
+			Credentials: map[string]any{"api_key": "test-key", "base_url": "https://api.openai.com"},
+			Extra:       map[string]any{"openai_passthrough": true, "codex_cli_only": enabled}, RateMultiplier: f64p(1)}
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		if enabled {
+			c.Request.Header.Set("User-Agent", "codex_cli_rs/0.141.0 (x)")
+			c.Request.Header.Set("x-codex-installation-id", "test-installation")
+		} else {
+			c.Request.Header.Set("User-Agent", "curl/8")
+		}
+		_, err := svc.Forward(context.Background(), c, account, []byte("{\"model\":\"gpt-5.2\",\"input\":\"hello\",\"stream\":false}"))
+		require.NoError(t, err)
+		require.NotNil(t, upstream.lastReq)
+		require.Equal(t, "Bearer test-key", upstream.lastReq.Header.Get("Authorization"))
+	}
+}
 
 func TestAetherGateAPIKeyClientPolicy(t *testing.T) {
 	gin.SetMode(gin.TestMode)

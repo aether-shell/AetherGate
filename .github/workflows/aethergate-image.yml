@@ -42,6 +42,10 @@ jobs:
       - name: Require same-commit checks
         run: python3 tools/aethergate/ag.py gate --sha "$SOURCE_SHA" --output /tmp/aethergate-gates.json
       - uses: docker/setup-buildx-action@v3
+      - name: Resolve build metadata
+        run: |
+          printf 'AG_VERSION=%s-aethergate.%s\n' "$(cat backend/cmd/server/VERSION)" "$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          printf 'AG_DATE=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - name: Build on GitHub runner
         uses: docker/build-push-action@v6
         with:
@@ -52,9 +56,9 @@ jobs:
           push: false
           tags: ${{ env.IMAGE }}
           build-args: |
-            VERSION=0.2.8-aethergate.${{ github.run_number }}
+            VERSION=${{ env.AG_VERSION }}
             COMMIT=${{ github.sha }}
-            DATE=${{ github.run_id }}
+            DATE=${{ env.AG_DATE }}
             GOPROXY=https://proxy.golang.org,direct
             GOSUMDB=sum.golang.org
           cache-from: type=gha,scope=aethergate-amd64

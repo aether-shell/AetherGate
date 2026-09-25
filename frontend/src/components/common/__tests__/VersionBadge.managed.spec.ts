@@ -14,7 +14,10 @@ vi.mock('@/stores/app', () => ({ useAppStore: () => ({
   buildType: 'release', releaseInfo: { html_url: 'https://github.com/Wei-Shaw/sub2api' },
   fetchVersion: mocks.fetchVersion
 }) }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', async (importOriginal) => ({
+  ...await importOriginal<typeof import('vue-i18n')>(),
+  useI18n: () => ({ t: (key: string) => key })
+}))
 vi.mock('@/api/admin/system', () => ({
   performUpdate: mocks.update, rollback: mocks.rollback, getRollbackVersions: mocks.versions,
   restartService: vi.fn()

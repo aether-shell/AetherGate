@@ -64,6 +64,14 @@ def validate_target(target):
 
 
 def deploy(payload):
+    validate_target(payload["target"])
+    directory = Path(payload["target"]["compose_file"]).resolve().parent
+    with open(directory / ".aethergate-release.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return deploy_locked(payload)
+
+
+def deploy_locked(payload):
     target, manifest = payload["target"], payload["manifest"]
     validate_target(target)
     require(manifest.get("product") == "aethergate" and manifest.get("repository") == "aether-shell/AetherGate", "Wrong manifest")
@@ -74,8 +82,6 @@ def deploy(payload):
     identity = json.loads((directory / "aethergate-target.json").read_text())
     require(identity == {k: target[k] for k in ("product", "project", "service", "database_service")}, "Host identity file does not match target")
     require(command("uname", "-m") == "x86_64", "First release supports linux/amd64")
-    lock = open(directory / ".aethergate-release.lock", "a")
-    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     base = ["docker", "compose", "--project-name", target["project"], "-f", str(compose_file)]
     override = directory / ".aethergate-image.json"
     receipt_file = directory / ".aethergate-release.json"
