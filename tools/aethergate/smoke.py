@@ -87,6 +87,11 @@ def main():
         assert status == 200, "Admin login failed"
         token = login["data"]["access_token"]
         print("::add-mask::" + token, flush=True)
+        status, ack = request(port, "/api/v1/admin/compliance/accept", token, {
+            "language": "en",
+            "phrase": "I have read, understood, and agree to the Sub2API Deployment and Operation Compliance Commitment",
+        })
+        assert status == 200, "Admin compliance acknowledgement failed"
         status, check = request(port, "/api/v1/admin/system/check-updates?force=true", token)
         assert status == 200 and check["data"]["managed"] is True and check["data"]["build_type"] == "aethergate"
         assert not check["data"]["has_update"]
