@@ -19,9 +19,9 @@ export default {
 
   // Version Badge
   version: {
-    managedTitle: 'Managed AetherGate build',
-    managedHint: 'Updates and rollbacks use the AetherGate build and release workflow. Official releases are not checked or installed here.',
-    managedActions: 'View builds and checks',
+    managedTitle: 'Version details',
+    managedHint: 'Updates are deployed by the site administrator.',
+    managedActions: 'View release history',
     currentVersion: 'Current Version',
     latestVersion: 'Latest Version',
     upToDate: "You're running the latest version.",

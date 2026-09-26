@@ -19,9 +19,9 @@ export default {
 
   // Version Badge
   version: {
-    managedTitle: 'AetherGate 受管版本',
-    managedHint: '升级和回退通过 AetherGate 构建与发布流程完成。此处不检查或安装官方版本。',
-    managedActions: '查看构建与验证',
+    managedTitle: '版本详情',
+    managedHint: '版本更新由站点管理员统一部署。',
+    managedActions: '查看发布记录',
     currentVersion: '当前版本',
     latestVersion: '最新版本',
     upToDate: '已是最新版本',
