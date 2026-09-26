@@ -1,6 +1,7 @@
 """Executed over SSH; stdout contains only a redacted deployment receipt."""
 import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from urllib.parse import urlsplit
 
 IMAGE = "ghcr.io/aether-shell/aethergate"
 SOURCE = "https://github.com/aether-shell/AetherGate"
@@ -60,7 +62,23 @@ def validate_target(target):
     require(re.fullmatch(r"[a-zA-Z0-9_-]+", target.get("database_service", "")), "Database service required")
     require(target["database_service"] != target["service"], "Database/application services must differ")
     require(Path(target.get("compose_file", "")).is_absolute(), "Absolute Compose path required")
-    require(re.fullmatch(r"http://127\.0\.0\.1:[0-9]+/health", target.get("health_url", "")), "Loopback health endpoint required")
+    health = urlsplit(target.get("health_url", ""))
+    try:
+        address = ipaddress.ip_address(health.hostname or "")
+        port = health.port
+    except ValueError:
+        raise ValueError("Private IP health endpoint required") from None
+    require(health.scheme == "http" and address.version == 4 and address.is_private and port and
+            health.path == "/health" and not (health.username or health.password or health.query or health.fragment),
+            "Private IP health endpoint required")
+
+
+def health_target_matches_container(target, container):
+    host = urlsplit(target["health_url"]).hostname
+    if host == "127.0.0.1":
+        return True
+    networks = container.get("NetworkSettings", {}).get("Networks", {})
+    return host in {network.get("IPAddress") for network in networks.values()}
 
 
 def deploy(payload):
@@ -109,6 +127,7 @@ def deploy_locked(payload):
         require(labels.get("com.docker.compose.project") == target["project"] and labels.get("cc.aethergate.product") == "aethergate", "Current container identity mismatch")
         require(current["Config"]["Image"] == previous["image"] and immutable(previous["image"]), "Current deployment differs from receipt")
         require(current["State"].get("Health", {}).get("Status") == "healthy", "Current app is not healthy")
+        require(health_target_matches_container(target, current), "Health endpoint does not address the app container")
         require(compatible(previous, manifest, target.get("rollback_compatible")), "Schema changed or compatibility not declared: a separate backup/migration procedure is required")
     snapshot = {"config_hash": digest(config), "container": current["Id"] if current else None,
                 "image_id": current["Image"] if current else None, "previous": previous,
@@ -133,6 +152,7 @@ def deploy_locked(payload):
             if len(ids) == 1:
                 running = json.loads(command("docker", "inspect", ids[0]))[0]
                 if running["Image"] == expected_image_id and running["State"].get("Health", {}).get("Status") == "healthy":
+                    require(health_target_matches_container(target, running), "Health endpoint does not address the app container")
                     try:
                         with urllib.request.urlopen(target["health_url"], timeout=3) as response:
                             healthy = response.status == 200

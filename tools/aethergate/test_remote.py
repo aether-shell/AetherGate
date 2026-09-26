@@ -15,9 +15,18 @@ class TargetContractTest(unittest.TestCase):
     def test_target_identity_and_explicit_modes(self):
         remote.validate_target(self.target)
         remote.validate_target({**self.target, "mode": "update"})
-        for key, value in [("product", "pro"), ("project", "tokenrouter-pro"), ("mode", "auto"), ("compose_file", "compose.yaml"), ("health_url", "https://production.example/health")]:
+        remote.validate_target({**self.target, "health_url": "http://172.22.0.10:8080/health"})
+        for key, value in [("product", "pro"), ("project", "tokenrouter-pro"), ("mode", "auto"), ("compose_file", "compose.yaml"),
+                           ("health_url", "https://production.example/health"), ("health_url", "http://8.8.8.8:8080/health")]:
             with self.subTest(key=key), self.assertRaises(ValueError):
                 remote.validate_target({**self.target, key: value})
+
+    def test_private_health_endpoint_must_address_app_container(self):
+        container = {"NetworkSettings": {"Networks": {"internal": {"IPAddress": "172.22.0.10"}}}}
+        self.assertTrue(remote.health_target_matches_container(
+            {**self.target, "health_url": "http://172.22.0.10:8080/health"}, container))
+        self.assertFalse(remote.health_target_matches_container(
+            {**self.target, "health_url": "http://172.22.0.11:8080/health"}, container))
 
     def test_rollback_needs_prior_receipt_same_schema_and_explicit_compatibility(self):
         current = {"database_schema": "a"}
@@ -67,6 +76,7 @@ class TargetContractTest(unittest.TestCase):
                     new = state["image"] == manifest["image"]
                     return json.dumps([{"Id": "new-container" if new else "old-container", "Image": "new-id" if new else "old-id",
                                         "Config": {"Image": state["image"], "Labels": {"com.docker.compose.project": "aethergate", "cc.aethergate.product": "aethergate"}},
+                                        "NetworkSettings": {"Networks": {"internal": {"IPAddress": "172.22.0.10"}}},
                                         "State": {"Health": {"Status": "unhealthy" if new and unhealthy else "healthy"}}}])
                 if "psql" in args:
                     return tables
