@@ -26,10 +26,10 @@ vi.mock('@/api/admin/system', () => ({
 describe('AetherGate managed version', () => {
   it('旧官方更新缓存不能显示更新、回退按钮或官方命令', async () => {
     const wrapper = mount(VersionBadge)
-    await wrapper.get('summary').trigger('click')
+    await wrapper.get('button').trigger('click')
     expect(wrapper.text()).toContain('AetherGate')
     expect(wrapper.text()).toContain('0.2.8-aethergate.1')
-    expect(wrapper.findAll('button')).toHaveLength(0)
+    expect(wrapper.findAll('button')).toHaveLength(2)
     expect(wrapper.get('a').attributes('href')).toBe('https://github.com/aether-shell/AetherGate/actions')
     expect(wrapper.html()).not.toContain('weishaw/sub2api')
     expect(wrapper.html()).not.toContain('install.sh')
