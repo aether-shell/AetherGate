@@ -186,6 +186,7 @@ export interface ContentModerationAPIKeyLoad {
 }
 
 export interface ContentModerationLog {
+  input_items?: Array<{ index: number; source: 'user' | 'tool'; type: 'text' | 'image'; text?: string; image_ref?: string }>
   engine_meta?: ModerationEngineMeta | null
   id: number
   request_id: string
@@ -287,6 +288,11 @@ export async function listLogs(
   return data
 }
 
+export async function getLog(id: number): Promise<ContentModerationLog> {
+  const { data } = await apiClient.get<ContentModerationLog>(`/admin/risk-control/logs/${id}`)
+  return data
+}
+
 export async function unbanUser(userID: number): Promise<ContentModerationUnbanUserResponse> {
   const { data } = await apiClient.post<ContentModerationUnbanUserResponse>(
     `/admin/risk-control/users/${userID}/unban`
@@ -312,6 +318,7 @@ export const riskControlAPI = {
   getStatus,
   testAPIKeys,
   listLogs,
+  getLog,
   unbanUser,
   deleteFlaggedHash,
   clearFlaggedHashes,

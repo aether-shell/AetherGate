@@ -63,6 +63,8 @@ const (
 	maxContentModerationTimeoutMS     = 30000
 	maxModerationInputRunes           = 12000
 	maxModerationExcerptRunes         = 240
+	defaultModerationUserTextChars    = 2000
+	defaultModerationToolTextChars    = 400
 
 	defaultContentModerationWorkerCount          = 4
 	maxContentModerationWorkerCount              = 32
@@ -139,12 +141,17 @@ func ContentModerationCategories() []string {
 }
 
 type ContentModerationConfig struct {
-	Engine   string                         `json:"engine,omitempty"`
-	TypeSafe *ContentModerationEngineConfig `json:"typesafe,omitempty"`
-	Enabled  bool                           `json:"enabled"`
-	Mode     string                         `json:"mode"`
-	BaseURL  string                         `json:"base_url"`
-	Model    string                         `json:"model"`
+	// Defaults are the Pro policy snapshot; the settings UI does not manage these fields.
+	AuditUserTextMaxChars   int                            `json:"audit_user_text_max_chars"`
+	AuditToolOutputMaxChars int                            `json:"audit_tool_output_max_chars"`
+	AuditImages             bool                           `json:"audit_images"`
+	AuditToolOutputs        bool                           `json:"audit_tool_outputs"`
+	Engine                  string                         `json:"engine,omitempty"`
+	TypeSafe                *ContentModerationEngineConfig `json:"typesafe,omitempty"`
+	Enabled                 bool                           `json:"enabled"`
+	Mode                    string                         `json:"mode"`
+	BaseURL                 string                         `json:"base_url"`
+	Model                   string                         `json:"model"`
 	// ProxyID 指定审计请求使用的代理服务器（IP管理-代理服务器），nil 表示直连。
 	ProxyID              *int64                       `json:"proxy_id,omitempty"`
 	APIKey               string                       `json:"api_key,omitempty"`
@@ -331,16 +338,31 @@ type ContentModerationCheckInput struct {
 }
 
 type ContentModerationInput struct {
-	Text   string
-	Images []string
+	Text       string
+	Images     []string
+	Items      []ContentModerationInputItem
+	ImageItems []ContentModerationImage
+	Source     string
 }
 
 func (in *ContentModerationInput) Normalize() {
 	if in == nil {
 		return
 	}
-	in.Text = trimRunes(normalizeContentModerationText(in.Text), maxModerationInputRunes)
 	in.Images = normalizeModerationImages(in.Images)
+	if len(in.Items) == 0 {
+		if strings.TrimSpace(in.Text) != "" {
+			in.Items = append(in.Items, ContentModerationInputItem{Index: len(in.Items), Source: ContentModerationSourceUser, Type: ContentModerationItemTypeText, Text: in.Text})
+		}
+		for _, image := range in.Images {
+			item := ContentModerationInputItem{Index: len(in.Items), Source: ContentModerationSourceUser, Type: ContentModerationItemTypeImage, ImageRef: image}
+			in.Items = append(in.Items, item)
+			in.ImageItems = append(in.ImageItems, ContentModerationImage{SourceIndex: item.Index, Source: item.Source, Reference: image})
+		}
+	}
+	if in.Source == "" {
+		in.Source = contentModerationInputSource(in.Items)
+	}
 }
 
 func (in ContentModerationInput) IsEmpty() bool {
@@ -348,7 +370,7 @@ func (in ContentModerationInput) IsEmpty() bool {
 }
 
 func (in ContentModerationInput) ModerationInput() any {
-	images := limitContentModerationImages(in.Images)
+	images := in.Images
 	if len(images) == 0 {
 		return in.Text
 	}
@@ -370,7 +392,16 @@ func (in ContentModerationInput) ExcerptText() string {
 }
 
 func (in ContentModerationInput) Hash() string {
+	in.Normalize()
 	h := sha256.New()
+	// Source boundaries affect audit budgets, so user and tool text must not share
+	// a cached verdict even when their combined text is identical.
+	_, _ = h.Write([]byte("current-turn-v2\x00"))
+	for _, item := range in.Items {
+		encoded, _ := json.Marshal(item)
+		_, _ = h.Write(encoded)
+		_, _ = h.Write([]byte{0})
+	}
 	_, _ = h.Write([]byte("text:"))
 	_, _ = h.Write([]byte(in.Text))
 	for _, image := range in.Images {
@@ -395,6 +426,7 @@ type ContentModerationDecision struct {
 }
 
 type ContentModerationLog struct {
+	InputItems        []ContentModerationInputItem `json:"input_items,omitempty"`
 	EngineMeta        *ContentModerationEngineMeta `json:"engine_meta,omitempty"`
 	ID                int64                        `json:"id"`
 	RequestID         string                       `json:"request_id"`
@@ -427,13 +459,15 @@ type ContentModerationLog struct {
 }
 
 type ContentModerationLogFilter struct {
-	Pagination pagination.PaginationParams
-	Result     string
-	GroupID    *int64
-	Endpoint   string
-	Search     string
-	From       *time.Time
-	To         *time.Time
+	ID           *int64
+	IncludeInput bool
+	Pagination   pagination.PaginationParams
+	Result       string
+	GroupID      *int64
+	Endpoint     string
+	Search       string
+	From         *time.Time
+	To           *time.Time
 }
 
 type ContentModerationCleanupResult struct {
@@ -770,6 +804,14 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 	if err != nil {
 		return nil, err
 	}
+	if contentModerationTestHasAuditInput(input.Prompt, input.Images) {
+		content := ContentModerationInput{Text: input.Prompt, Images: normalizeModerationImages(input.Images)}
+		content = contentModerationAuditInput(content, cfg)
+		if content.IsEmpty() {
+			return nil, infraerrors.BadRequest("EMPTY_MODERATION_TEST_INPUT", "审核策略过滤后没有可送审内容")
+		}
+		testInput, imageCount = content.ModerationInput(), len(content.Images)
+	}
 	auditOnly := contentModerationTestHasAuditInput(input.Prompt, input.Images)
 	if configured && auditOnly {
 		key, ok := s.nextUsableAPIKey(cfg)
@@ -1049,9 +1091,22 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		defer s.preBlockActive.Add(-1)
 	}
 	start := time.Now()
-	result, err := s.callModeration(ctx, cfg, content.ModerationInput(), trackPreBlock)
+	auditInput := contentModerationAuditInput(content, cfg)
+	if auditInput.IsEmpty() {
+		if trackPreBlock {
+			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
+		}
+		return allow
+	}
+	result, err := s.auditModerationContent(ctx, cfg, auditInput, trackPreBlock)
 	latency := int(time.Since(start).Milliseconds())
-	if err != nil {
+	partialHit := false
+	auditError := ""
+	if err != nil && result != nil {
+		partialHit, _, _ = evaluateModerationScores(result.CategoryScores, cfg.Thresholds)
+		auditError = err.Error()
+	}
+	if err != nil && !partialHit {
 		if trackPreBlock {
 			s.recordPreBlockSyncMetric(latency, ContentModerationActionError)
 		}
@@ -1072,7 +1127,7 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		}
 		if cfg.RecordNonHits {
 			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), &latency, queueDelay, err.Error())
-			log.EngineMeta = moderationAttemptMeta(cfg, content)
+			log.EngineMeta = moderationAttemptMeta(cfg, auditInput)
 			_ = s.repo.CreateLog(ctx, log)
 		}
 		return allow
@@ -1105,7 +1160,7 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		"latency_ms", latency,
 		"queue_delay_ms", queueDelay)
 	if flagged || cfg.RecordNonHits {
-		log := s.buildLog(input, cfg, action, flagged, highestCategory, highestScore, result.CategoryScores, content.ExcerptText(), &latency, queueDelay, "")
+		log := s.buildLog(input, cfg, action, flagged, highestCategory, highestScore, result.CategoryScores, content.ExcerptText(), &latency, queueDelay, auditError)
 		log.EngineMeta = result.EngineMeta
 		if queueDelay == nil && cfg.Mode == ContentModerationModePreBlock {
 			s.enqueueRecord(input, cfg, log, hashText, flagged, flagged)
@@ -1309,6 +1364,17 @@ func (s *ContentModerationService) ListLogs(ctx context.Context, filter ContentM
 		filter.Pagination.SortOrder = pagination.SortOrderDesc
 	}
 	return s.repo.ListLogs(ctx, filter)
+}
+
+func (s *ContentModerationService) GetLog(ctx context.Context, id int64) (*ContentModerationLog, error) {
+	items, _, err := s.ListLogs(ctx, ContentModerationLogFilter{ID: &id, IncludeInput: true})
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, infraerrors.NotFound("CONTENT_MODERATION_LOG_NOT_FOUND", "审核记录不存在")
+	}
+	return &items[0], nil
 }
 
 func (s *ContentModerationService) UnbanUser(ctx context.Context, userID int64) (*ContentModerationUnbanUserResult, error) {
@@ -1893,6 +1959,7 @@ func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, c
 		CategoryScores:    cloneFloatMap(scores),
 		ThresholdSnapshot: cloneFloatMap(cfg.Thresholds),
 		InputExcerpt:      trimRunes(redactContentModerationSecrets(text), maxModerationExcerptRunes),
+		InputItems:        moderationReviewItems(input, text),
 		UpstreamLatencyMS: latency,
 		QueueDelayMS:      queueDelay,
 		Error:             errText,
@@ -2091,30 +2158,34 @@ func (s *ContentModerationService) siteName(ctx context.Context) string {
 
 func defaultContentModerationConfig() *ContentModerationConfig {
 	return &ContentModerationConfig{
-		Enabled:              false,
-		Mode:                 ContentModerationModePreBlock,
-		BaseURL:              defaultContentModerationBaseURL,
-		Model:                defaultContentModerationModel,
-		TimeoutMS:            defaultContentModerationTimeoutMS,
-		SampleRate:           100,
-		AllGroups:            true,
-		GroupIDs:             []int64{},
-		RecordNonHits:        false,
-		Thresholds:           ContentModerationDefaultThresholds(),
-		WorkerCount:          defaultContentModerationWorkerCount,
-		QueueSize:            defaultContentModerationQueueSize,
-		BlockStatus:          defaultContentModerationBlockHTTPStatus,
-		BlockMessage:         defaultContentModerationBlockMessage,
-		EmailOnHit:           true,
-		AutoBanEnabled:       true,
-		BanThreshold:         defaultContentModerationBanThreshold,
-		ViolationWindowHours: defaultContentModerationViolationWindowHours,
-		RetryCount:           defaultContentModerationRetryCount,
-		HitRetentionDays:     defaultContentModerationHitRetentionDays,
-		NonHitRetentionDays:  defaultContentModerationNonHitRetentionDays,
-		PreHashCheckEnabled:  false,
-		BlockedKeywords:      []string{},
-		KeywordBlockingMode:  ContentModerationKeywordModeKeywordAndAPI,
+		AuditUserTextMaxChars:   defaultModerationUserTextChars,
+		AuditToolOutputMaxChars: defaultModerationToolTextChars,
+		AuditImages:             true,
+		AuditToolOutputs:        true,
+		Enabled:                 false,
+		Mode:                    ContentModerationModePreBlock,
+		BaseURL:                 defaultContentModerationBaseURL,
+		Model:                   defaultContentModerationModel,
+		TimeoutMS:               defaultContentModerationTimeoutMS,
+		SampleRate:              100,
+		AllGroups:               true,
+		GroupIDs:                []int64{},
+		RecordNonHits:           false,
+		Thresholds:              ContentModerationDefaultThresholds(),
+		WorkerCount:             defaultContentModerationWorkerCount,
+		QueueSize:               defaultContentModerationQueueSize,
+		BlockStatus:             defaultContentModerationBlockHTTPStatus,
+		BlockMessage:            defaultContentModerationBlockMessage,
+		EmailOnHit:              true,
+		AutoBanEnabled:          true,
+		BanThreshold:            defaultContentModerationBanThreshold,
+		ViolationWindowHours:    defaultContentModerationViolationWindowHours,
+		RetryCount:              defaultContentModerationRetryCount,
+		HitRetentionDays:        defaultContentModerationHitRetentionDays,
+		NonHitRetentionDays:     defaultContentModerationNonHitRetentionDays,
+		PreHashCheckEnabled:     false,
+		BlockedKeywords:         []string{},
+		KeywordBlockingMode:     ContentModerationKeywordModeKeywordAndAPI,
 		ModelFilter: ContentModerationModelFilter{
 			Type:   ContentModerationModelFilterAll,
 			Models: []string{},
@@ -2144,6 +2215,14 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 }
 
 func (cfg *ContentModerationConfig) normalize() {
+	if cfg.AuditUserTextMaxChars <= 0 {
+		cfg.AuditUserTextMaxChars = defaultModerationUserTextChars
+	}
+	if cfg.AuditToolOutputMaxChars <= 0 {
+		cfg.AuditToolOutputMaxChars = defaultModerationToolTextChars
+	}
+	cfg.AuditUserTextMaxChars = min(cfg.AuditUserTextMaxChars, 1000000)
+	cfg.AuditToolOutputMaxChars = min(cfg.AuditToolOutputMaxChars, 1000000)
 	cfg.Engine = moderationEngine(cfg.Engine)
 	if cfg.APIKey != "" {
 		cfg.APIKeys = normalizeModerationAPIKeys(append(cfg.APIKeys, cfg.APIKey))

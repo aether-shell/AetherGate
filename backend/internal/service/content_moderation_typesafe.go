@@ -84,7 +84,7 @@ func moderationAttemptMeta(cfg *ContentModerationConfig, input ContentModeration
 	meta := &ContentModerationEngineMeta{Engine: moderationEngine(cfg.Engine)}
 	if cfg.Engine == ContentModerationEngineTypeSafe {
 		meta.RulesVersion = TypeSafeModerationRulesVersion
-		meta.SkippedImages = len(limitContentModerationImages(input.Images))
+		meta.SkippedImages = len(input.Images)
 	}
 	// Actual model remains empty until the upstream returns a successful response.
 	return meta

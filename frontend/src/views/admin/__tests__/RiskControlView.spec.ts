@@ -11,6 +11,7 @@ const {
   updateConfig,
   getStatus,
   listLogs,
+  getLog,
   getGroups,
   getProxies,
   testAPIKeys,
@@ -21,6 +22,7 @@ const {
   updateConfig: vi.fn(),
   getStatus: vi.fn(),
   listLogs: vi.fn(),
+  getLog: vi.fn(),
   getGroups: vi.fn(),
   getProxies: vi.fn(),
   testAPIKeys: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock('@/api/admin', () => ({
       updateConfig,
       getStatus,
       listLogs,
+      getLog,
       testAPIKeys,
       deleteFlaggedHash: vi.fn(),
       clearFlaggedHashes: vi.fn(),
@@ -198,6 +201,7 @@ describe('admin RiskControlView', () => {
     updateConfig.mockReset()
     getStatus.mockReset()
     listLogs.mockReset()
+    getLog.mockReset()
     getGroups.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
@@ -206,6 +210,7 @@ describe('admin RiskControlView', () => {
     getConfig.mockResolvedValue(baseConfig())
     getStatus.mockResolvedValue(runtimeStatus())
     listLogs.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 1 })
+    getLog.mockResolvedValue({ id: 1, input_excerpt: 'legacy excerpt' })
     getGroups.mockResolvedValue([])
     getProxies.mockResolvedValue([])
     updateConfig.mockImplementation(async (payload: UpdateContentModerationConfig) => ({
@@ -218,6 +223,23 @@ describe('admin RiskControlView', () => {
       api_key_masks: [],
       api_key_statuses: [],
     }))
+  })
+
+  it('loads complete input only when opening the existing detail view', async () => {
+    const row = { id: 7, input_excerpt: 'short summary', created_at: '2026-09-30T00:00:00Z', action: 'allow', highest_score: 0, category_scores: {}, threshold_snapshot: {}, engine_meta: null }
+    listLogs.mockResolvedValue({ items: [row], total: 1, page: 1, page_size: 20, pages: 1 })
+    const fullText = 'complete content '.repeat(300)
+    getLog.mockResolvedValue({ ...row, input_items: [{ index: 0, source: 'tool', type: 'text', text: fullText }, { index: 1, source: 'user', type: 'image', image_ref: 'data:image/png;base64,aGVsbG8=' }] })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
+    await flushPromises()
+    expect(getLog).not.toHaveBeenCalled()
+    await findButtonByText(wrapper, 'short summary').trigger('click')
+    await flushPromises()
+    expect(getLog).toHaveBeenCalledWith(7)
+    expect(wrapper.get('[data-test="audit-full-input"]').text()).toContain(fullText.trim())
+    expect(wrapper.get('[data-test="audit-full-input"] img').attributes('src')).toBe('data:image/png;base64,aGVsbG8=')
+    expect(updateConfig).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it.each(['openai', 'typesafe'] as const)('shows the selected draft engine keys while %s remains active', async (activeEngine) => {

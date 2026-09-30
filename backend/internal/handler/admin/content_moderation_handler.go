@@ -164,6 +164,20 @@ func (h *ContentModerationHandler) GetStatus(c *gin.Context) {
 	response.Success(c, status)
 }
 
+func (h *ContentModerationHandler) GetLog(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid log id")
+		return
+	}
+	log, err := h.service.GetLog(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, log)
+}
+
 func (h *ContentModerationHandler) ListLogs(c *gin.Context) {
 	page, pageSize := response.ParsePagination(c)
 	filter := service.ContentModerationLogFilter{

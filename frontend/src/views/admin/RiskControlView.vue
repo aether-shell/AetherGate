@@ -1132,7 +1132,15 @@
                 {{ inputDetailRow.group_name }}
               </span>
             </div>
-            <pre class="mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-950 p-4 text-sm leading-6 text-gray-100 shadow-inner dark:bg-black/50">{{ inputDetailText }}</pre>
+            <div v-if="inputDetailLoading" class="py-4 text-sm text-gray-500" role="status">{{ t('common.loading') }}</div>
+            <div v-else-if="inputDetailRow.input_items?.length" class="mt-4 max-h-[420px] space-y-4 overflow-auto" data-test="audit-full-input">
+              <div v-for="item in inputDetailRow.input_items" :key="item.index" class="min-w-0">
+                <p class="mb-1 text-xs font-medium text-gray-500">{{ item.source === 'tool' ? 'Tool' : 'User' }} · {{ item.index + 1 }}</p>
+                <pre v-if="item.type === 'text'" class="whitespace-pre-wrap break-words rounded-lg bg-gray-950 p-4 text-sm leading-6 text-gray-100">{{ item.text }}</pre>
+                <img v-else-if="reviewImageURL(item.image_ref)" :src="reviewImageURL(item.image_ref)" alt="" loading="lazy" referrerpolicy="no-referrer" class="max-h-80 max-w-full object-contain" />
+              </div>
+            </div>
+            <pre v-else class="mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-950 p-4 text-sm leading-6 text-gray-100 shadow-inner dark:bg-black/50">{{ inputDetailText }}</pre>
           </div>
         </div>
 
@@ -1251,6 +1259,8 @@ const moderationTestPrompt = ref('')
 const moderationTestImages = ref<string[]>([])
 const moderationTestResult = ref<ContentModerationTestAuditResult | null>(null)
 const inputDetailRow = ref<ContentModerationLog | null>(null)
+const inputDetailLoading = ref(false)
+let inputDetailRequest = 0
 const savedEngine = ref<ModerationEngine>('openai')
 const engineOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI' }, { value: 'typesafe', label: 'TypeSafe AI' }]
 const engineLabel = (engine: ModerationEngine) => engine === 'typesafe' ? 'TypeSafe AI' : 'OpenAI'
@@ -1977,12 +1987,28 @@ function inputSummaryText(row: ContentModerationLog): string {
   return row.input_excerpt || row.error || '-'
 }
 
-function openInputDetail(row: ContentModerationLog) {
+async function openInputDetail(row: ContentModerationLog) {
+  const request = ++inputDetailRequest
   inputDetailRow.value = row
+  inputDetailLoading.value = true
+  try {
+    const detail = await adminAPI.riskControl.getLog(row.id)
+    if (request === inputDetailRequest) inputDetailRow.value = detail
+  } catch (err: unknown) {
+    if (request === inputDetailRequest) appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.loadFailed')))
+  } finally {
+    if (request === inputDetailRequest) inputDetailLoading.value = false
+  }
 }
 
 function closeInputDetail() {
+  inputDetailRequest++
   inputDetailRow.value = null
+  inputDetailLoading.value = false
+}
+
+function reviewImageURL(value?: string): string | undefined {
+  return value && /^(https?:\/\/|data:image\/(?:png|jpeg|gif|webp);base64,)/i.test(value) ? value : undefined
 }
 
 async function unbanUser(row: ContentModerationLog) {

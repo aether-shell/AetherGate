@@ -6,10 +6,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 当数组末尾不是用户消息时（典型场景：Agent 工具循环结束于 tool/assistant），
-// 应直接跳过审计——不再回溯查找历史中的某条用户消息。
+// Current tool results are audited without revisiting the preceding user turn.
 
-func TestExtractContentModerationInput_AnthropicAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_AnthropicAgentToolLoopAuditsResult(t *testing.T) {
 	body := []byte(`{
 		"messages": [
 			{"role":"user","content":"调用一下天气工具"},
@@ -20,7 +19,8 @@ func TestExtractContentModerationInput_AnthropicAgentToolLoopSkipsAudit(t *testi
 
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "晴 25 度", input.Text)
+	require.Equal(t, ContentModerationSourceTool, input.Source)
 	require.Empty(t, input.Images)
 }
 
@@ -79,7 +79,7 @@ func TestExtractContentModerationInput_AnthropicStreamResendExtractsResend(t *te
 	require.Equal(t, "重发", input.Text)
 }
 
-func TestExtractContentModerationInput_OpenAIChatAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_OpenAIChatAgentToolLoopAuditsResult(t *testing.T) {
 	body := []byte(`{
 		"messages": [
 			{"role":"system","content":"sys"},
@@ -91,7 +91,8 @@ func TestExtractContentModerationInput_OpenAIChatAgentToolLoopSkipsAudit(t *test
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "[]", input.Text)
+	require.Equal(t, ContentModerationSourceTool, input.Source)
 	require.Empty(t, input.Images)
 }
 
@@ -109,7 +110,7 @@ func TestExtractContentModerationInput_OpenAIChatMultiTurnExtractsLatestUser(t *
 	require.Equal(t, "Q2", input.Text)
 }
 
-func TestExtractContentModerationInput_GeminiAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_GeminiAgentToolLoopAuditsResult(t *testing.T) {
 	body := []byte(`{
 		"contents": [
 			{"role":"user","parts":[{"text":"查询天气"}]},
@@ -120,7 +121,8 @@ func TestExtractContentModerationInput_GeminiAgentToolLoopSkipsAudit(t *testing.
 
 	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
 
-	require.Empty(t, input.Text)
+	require.JSONEq(t, `{"temp":25}`, input.Text)
+	require.Equal(t, ContentModerationSourceTool, input.Source)
 	require.Empty(t, input.Images)
 }
 
@@ -150,7 +152,7 @@ func TestExtractContentModerationInput_GeminiMultiTurnExtractsLatestUser(t *test
 	require.Equal(t, "Q2", input.Text)
 }
 
-func TestExtractContentModerationInput_ResponsesAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_ResponsesAgentToolLoopAuditsResult(t *testing.T) {
 	body := []byte(`{
 		"input":[
 			{"type":"message","role":"user","content":[{"type":"input_text","text":"运行测试"}]},
@@ -161,7 +163,8 @@ func TestExtractContentModerationInput_ResponsesAgentToolLoopSkipsAudit(t *testi
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "all passed", input.Text)
+	require.Equal(t, ContentModerationSourceTool, input.Source)
 	require.Empty(t, input.Images)
 }
 
