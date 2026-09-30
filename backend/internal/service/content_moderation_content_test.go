@@ -171,7 +171,7 @@ func TestModerationLocalKeywordChecksBeyondAuditPrefix(t *testing.T) {
 			require.NoError(t, err)
 			repo := &contentModerationTestRepo{}
 			svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(raw)}}, repo, nil, nil, nil, nil, nil, nil)
-			text := strings.Repeat("x", 15000) + "blocked-tail"
+			text := strings.Repeat("ordinary text. ", 1100) + "blocked-tail"
 			body, err := json.Marshal(map[string]any{"messages": []any{map[string]any{"role": "assistant", "content": "old"}, map[string]any{"role": role, "content": text}}})
 			require.NoError(t, err)
 			decision, err := svc.Check(context.Background(), ContentModerationCheckInput{Protocol: ContentModerationProtocolOpenAIChat, Body: body})
