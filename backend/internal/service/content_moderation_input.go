@@ -35,8 +35,12 @@ func contentModerationAuditInput(input ContentModerationInput, cfg *ContentModer
 		if source == ContentModerationSourceTool && gjson.Valid(text) {
 			value := gjson.Parse(text)
 			if value.IsObject() || value.IsArray() {
-				raw, _ := json.Marshal(moderationStructuredText(value))
-				text = string(raw)
+				images := newContentModerationInputBuilder()
+				collectImagesRecursively(value, source, images)
+				if len(images.images) > 0 {
+					raw, _ := json.Marshal(moderationStructuredText(value))
+					text = string(raw)
+				}
 			}
 		}
 		text, consumed := contentModerationRunePrefix(text, *remaining)

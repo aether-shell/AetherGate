@@ -78,6 +78,24 @@ func TestModerationCurrentTurnIncludesAllUserAndToolInputs(t *testing.T) {
 	}
 }
 
+func TestModerationStructuredToolPrefixRetainsOriginalFieldOrder(t *testing.T) {
+	raw := `{"z":"` + strings.Repeat("甲", 600) + `", "a":"tail"}`
+	body := []byte(`{"input":[{"type":"function_call_output","output":` + raw + `}]}`)
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+	audit := contentModerationAuditInput(input, defaultContentModerationConfig())
+	require.Equal(t, string([]rune(raw)[:400]), audit.Text)
+	require.Equal(t, raw, input.Text)
+}
+
+func TestModerationHashIncludesSourceAndTextPastAuditLimit(t *testing.T) {
+	user := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, []byte(`{"messages":[{"role":"user","content":"same"}]}`))
+	tool := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, []byte(`{"messages":[{"role":"tool","content":"same"}]}`))
+	require.NotEqual(t, user.Hash(), tool.Hash())
+	a := ContentModerationInput{Text: strings.Repeat("x", 15000) + "a"}
+	b := ContentModerationInput{Text: strings.Repeat("x", 15000) + "b"}
+	require.NotEqual(t, a.Hash(), b.Hash())
+}
+
 func TestModerationImageAndToolSwitches(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"assistant","content":"answer"},{"role":"tool","content":[{"type":"text","text":"result"},{"type":"image_url","image_url":{"url":"https://example.com/shared.png"}}]},{"role":"user","content":[{"type":"text","text":"user"},{"type":"image_url","image_url":{"url":"https://example.com/shared.png"}},{"type":"image_url","image_url":{"url":"https://example.com/user.png"}}]}]}`)
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)

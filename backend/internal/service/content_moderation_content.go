@@ -87,7 +87,9 @@ func (s *ContentModerationService) auditModerationContent(ctx context.Context, c
 		merged.EngineMeta = result.EngineMeta
 		merged.Flagged = merged.Flagged || result.Flagged
 		for category, score := range result.CategoryScores {
-			merged.CategoryScores[category] = max(merged.CategoryScores[category], score)
+			if score > merged.CategoryScores[category] {
+				merged.CategoryScores[category] = score
+			}
 		}
 	}
 	text := []rune(content.Text)
