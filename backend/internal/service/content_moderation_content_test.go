@@ -183,6 +183,53 @@ func TestModerationLocalKeywordChecksBeyondAuditPrefix(t *testing.T) {
 	}
 }
 
+func TestModerationAllowlistPreservesAuditBudgetsAndFullReview(t *testing.T) {
+	userText, toolText := strings.Repeat("甲", 3000), strings.Repeat("乙", 800)
+	body, err := json.Marshal(map[string]any{"messages": []any{
+		map[string]any{"role": "user", "content": userText},
+		map[string]any{"role": "tool", "content": toolText},
+	}})
+	require.NoError(t, err)
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var payload struct {
+			Input string `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		if payload.Input != strings.Repeat("甲", 2000)+"\n"+strings.Repeat("乙", 400) {
+			t.Error("allowlisted user changed moderation audit budgets")
+		}
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{CategoryScores: map[string]float64{"sexual": 0.99}}}})
+	}))
+	defer server.Close()
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled, cfg.BaseURL, cfg.APIKeys = true, server.URL, []string{"fixture-only"}
+	cfg.AutoBanEnabled, cfg.EmailOnHit, cfg.BanThreshold = true, true, 1
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &banCountArgsTestRepo{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(raw), SettingKeyCyberPolicyUserAllowlist: "12",
+	}}, repo, nil, nil, nil, nil, nil, nil)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{UserID: 12, Protocol: ContentModerationProtocolOpenAIChat, Body: body})
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	logs := requireContentModerationLogCount(t, &repo.contentModerationTestRepo, 1)
+	require.True(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationModeRiskControlLogOnly, logs[0].Mode)
+	require.False(t, logs[0].AutoBanned)
+	require.False(t, logs[0].EmailSent)
+	require.Empty(t, repo.snapshotCountCalls())
+	require.Len(t, logs[0].InputItems, 2)
+	require.Equal(t, userText, logs[0].InputItems[0].Text)
+	require.Equal(t, toolText, logs[0].InputItems[1].Text)
+	require.Equal(t, int32(1), calls.Load())
+}
+
 func TestModerationAuditsEveryImageAndRetainsHitAfterFailure(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

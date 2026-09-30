@@ -32,6 +32,21 @@ FRONTEND_CRITICAL_VITEST := \
 	src/components/user/profile/__tests__/ProfileInfoCard.spec.ts \
 	src/views/admin/__tests__/SettingsView.spec.ts \
 	src/views/admin/__tests__/RiskControlView.spec.ts \
+	src/api/__tests__/codex.spec.ts \
+	src/components/account/__tests__/AccountStatusIndicator.spec.ts \
+	src/components/account/__tests__/ClaudeResetCreditsCell.spec.ts \
+	src/components/account/__tests__/ModelWhitelistSelector.spec.ts \
+	src/components/account/__tests__/UsageProgressBar.spec.ts \
+	src/components/account/__tests__/credentialsBuilder.spec.ts \
+	src/components/admin/group/__tests__/GroupModal.cleanup.spec.ts \
+	src/components/common/__tests__/PlatformTypeBadge.openaiPlans.spec.ts \
+	src/components/keys/__tests__/UseKeyModal.spec.ts \
+	src/components/modelPlaza/__tests__/PlazaGroupSection.spec.ts \
+	src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts \
+	src/composables/__tests__/useModelWhitelist.spec.ts \
+	src/utils/__tests__/ccswitchImport.spec.ts \
+	src/views/admin/__tests__/DashboardView.spec.ts \
+	src/views/admin/__tests__/groupModelAllowlist.spec.ts \
 	src/features/channel-monitor-v2/__tests__/designSystem.structure.spec.ts \
 	src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts \
 	src/features/channel-monitor-v2/__tests__/monitorZoom.spec.ts
