@@ -59,7 +59,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'pnpm'
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install frontend dependencies
@@ -69,6 +69,7 @@ jobs:
         run: make test-frontend
       - name: AetherGate UI regression and build
         run: |
+          pnpm --dir frontend exec vitest run src/i18n/__tests__
           pnpm --dir frontend exec vitest run src/components/common/__tests__/VersionBadge.managed.spec.ts src/components/account/__tests__/CreateAccountModal.spec.ts src/components/account/__tests__/EditAccountModal.spec.ts src/components/account/__tests__/BulkEditAccountModal.spec.ts
           pnpm --dir frontend run build
 
