@@ -45,6 +45,10 @@ const row = {
     for (const [name, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]]) {
       const context = await browser.newContext({ viewport: { width, height }, locale: 'zh-CN', serviceWorkers: 'block' });
       await context.addInitScript(user => {
+        // The embedded application reads server-injected settings before any API
+        // request. Keep that bootstrap source consistent with the mocked API.
+        const settings = { site_name: 'stay', registration_enabled: false, custom_menu_items: [], run_mode: 'standard', risk_control_enabled: true };
+        Object.defineProperty(window, '__APP_CONFIG__', { get: () => settings, set: () => {} });
         localStorage.setItem('auth_token', 'synthetic-browser-fixture');
         localStorage.setItem('auth_user', JSON.stringify(user));
         localStorage.setItem('sub2api_locale', 'zh');
@@ -105,8 +109,14 @@ const row = {
         await route.fulfill({ json: { code: 0, data } });
       });
       await page.goto(origin + '/admin/risk-control', { waitUntil: 'networkidle', timeout: 60000 });
+      await page.screenshot({ path: '/tmp/stay-moderation-ready-' + name + '.png', animations: 'disabled' });
       const excerpt = page.getByRole('button', { name: 'Short fixture excerpt' });
-      await excerpt.waitFor({ timeout: 20000 });
+      try {
+        await excerpt.waitFor({ timeout: 20000 });
+      } catch (error) {
+        console.error(JSON.stringify({ url: page.url(), errors, unknownAPIPaths: [...unknown] }));
+        throw error;
+      }
       assert.equal(detailRequests, 0, 'List must not fetch complete input');
       await excerpt.click();
       const full = page.locator('[data-test="audit-full-input"]');
