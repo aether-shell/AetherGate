@@ -129,6 +129,10 @@ func extractContentModerationInput(protocol string, body []byte, filterReminders
 	case ContentModerationProtocolOpenAIImages:
 		builder.addText(ContentModerationSourceUser, gjson.GetBytes(body, "prompt").String())
 		collectContentValue(gjson.GetBytes(body, "images"), ContentModerationSourceUser, builder, false)
+	case ContentModerationProtocolTypeSafeSystemOne:
+		// System One has no harness reminders; all client text must be reviewed.
+		builder.filterReminders = false
+		builder.collectSystemOneInput(body)
 	default:
 		collectResponsesCurrentInput(gjson.GetBytes(body, "input"), builder)
 		collectChatCurrentTurn(gjson.GetBytes(body, "messages"), builder)
@@ -207,6 +211,67 @@ func (b *contentModerationInputBuilder) build() ContentModerationInput {
 	}
 	input.Source = contentModerationInputSource(input.Items)
 	return input
+}
+
+// collectSystemOneInput moderates every client-controlled text of a System One
+// request: question IDs, every question field except the validated type,
+// unknown top-level extension fields, and the evaluated state. Object keys are
+// sent to Jev as part of the JSON, so they are moderated like values.
+func (b *contentModerationInputBuilder) collectSystemOneInput(body []byte) {
+	root := gjson.ParseBytes(body)
+	questions := root.Get("questions")
+	if !questions.IsObject() {
+		b.collectSystemOneText(questions)
+	}
+	questions.ForEach(func(id, question gjson.Result) bool {
+		b.addText(ContentModerationSourceUser, id.String())
+		if !question.IsObject() {
+			b.collectSystemOneText(question)
+			return true
+		}
+		question.ForEach(func(field, value gjson.Result) bool {
+			switch field.String() {
+			case "type":
+				return true
+			case "instructions", "criteria":
+			default:
+				b.addText(ContentModerationSourceUser, field.String())
+			}
+			b.collectSystemOneText(value)
+			return true
+		})
+		return true
+	})
+	root.ForEach(func(field, value gjson.Result) bool {
+		switch field.String() {
+		case "model", "stream", "state", "questions":
+			return true
+		}
+		b.addText(ContentModerationSourceUser, field.String())
+		b.collectSystemOneText(value)
+		return true
+	})
+	b.collectSystemOneText(root.Get("state"))
+}
+
+func (b *contentModerationInputBuilder) collectSystemOneText(value gjson.Result) {
+	switch {
+	case !value.Exists():
+		return
+	case value.Type == gjson.String:
+		b.addText(ContentModerationSourceUser, value.String())
+	case value.IsArray():
+		value.ForEach(func(_, child gjson.Result) bool {
+			b.collectSystemOneText(child)
+			return true
+		})
+	case value.IsObject():
+		value.ForEach(func(key, child gjson.Result) bool {
+			b.addText(ContentModerationSourceUser, key.String())
+			b.collectSystemOneText(child)
+			return true
+		})
+	}
 }
 
 func collectChatCurrentTurn(messages gjson.Result, builder *contentModerationInputBuilder) {

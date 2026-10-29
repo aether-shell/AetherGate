@@ -1,8 +1,9 @@
 # AetherGate
 
-AetherGate directly follows Wei-Shaw/sub2api. Its only business customization is
-client restriction for **OpenAI upstream API Key accounts**. No RootFlow database
-or other TokenRouter features are imported.
+AetherGate directly follows Wei-Shaw/sub2api. It retains client restrictions for
+**OpenAI upstream API Key accounts** and the subsequently requested moderation
+defaults and complete current-turn review. Deployment-specific data migration
+and dashboard services are managed separately from this application repository.
 
 ## Client restriction
 
@@ -97,6 +98,51 @@ On failure it restores the prior digest and checks health. Schema-changing
 updates stop for a separate reviewed backup/migration procedure; this first
 release tool deliberately does not guess a database recovery contract. An
 interrupted or unsuccessful first install requires inspection before retrying.
+
+### Explicit schema-changing release
+
+`mode=migrate` is a separate, fail-closed path. Normal `update` still rejects
+different SQL/Ent fingerprints. Migration requires a private, deployment-local
+`migration_evidence` JSON under the deployment's `releases/` directory, binding:
+
+- `schema_version=1`, `project`, exact `previous` and `candidate` objects (each
+  containing `revision`, `image`, `database_schema`).
+- `config_hash` (the remote helper's canonical effective Compose digest),
+  `container` (old ID) and timezone-aware `created_at` after old-app shutdown.
+- `backup` and `rehearsal_backup`, each with absolute `path` and `sha256`.
+- `checks`: `restore`, `upgrade`, `downgrade`, `configuration`, `customizations`
+  must all be true, based on retained rehearsal results, not assumed compatibility.
+- `migrations_before` and `migrations_after`: ordered arrays of filename/checksum
+  objects. Existing migrations cannot be deleted or have their checksums changed.
+
+Backups and evidence must have private permissions. The final backup must be
+made after the application has exited; the checkpoint expires after one hour.
+Prepare/release revalidate checksums, the live ledger and effective configuration.
+The rehearsal uses independent storage with external egress blocked. Do not put
+production backups or credentials in GitHub artifacts.
+
+Before stopping the application, block **new** traffic to its dedicated IPv4
+Docker subnet, TCP port 8080, in both `DOCKER-USER` and `OUTPUT`. The required rule
+suffix is `-d <subnet> -p tcp --dport 8080 -m conntrack --ctstate NEW -m comment
+--comment aethergate-schema-maintenance -j REJECT`. The helper checks the exact
+rules with `iptables -C`; it does not install, remove or infer authorization for
+them. Drain existing streams before stopping the app. Other writers and jobs
+must also be quiesced before the final checkpoint. Do not return success for
+payment callbacks during maintenance; reconcile/retry them after recovery.
+
+The candidate's health is checked inside the container while ingress remains
+blocked. Successful release verifies the exact post-migration ledger and writes
+a receipt with `migration.traffic_blocked=true`. The operator must finish static
+configuration and business validation before removing only these two rules.
+IPv6, additional application ports and shared/multiple networks are unsupported.
+
+On failure, the candidate is stopped, the previous receipt is retained and the
+traffic guard stays installed. There is **no automatic database or image rollback**.
+`.aethergate-migration-state.json` prevents blind retries after interruption.
+Recover from the final checkpoint while writes remain blocked, verify the old
+application and archive the failed state with the incident evidence before retry.
+Never restore an old backup over post-release financial activity. An old binary
+on a newer database is allowed only after explicit compatibility verification.
 
 ## Following upstream
 

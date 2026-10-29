@@ -15,6 +15,7 @@ class TargetContractTest(unittest.TestCase):
     def test_target_identity_and_explicit_modes(self):
         remote.validate_target(self.target)
         remote.validate_target({**self.target, "mode": "update"})
+        remote.validate_target({**self.target, "mode": "migrate"})
         remote.validate_target({**self.target, "health_url": "http://172.22.0.10:8080/health"})
         for key, value in [("product", "pro"), ("project", "tokenrouter-pro"), ("mode", "auto"), ("compose_file", "compose.yaml"),
                            ("health_url", "https://production.example/health"), ("health_url", "http://8.8.8.8:8080/health")]:
@@ -58,12 +59,13 @@ class TargetContractTest(unittest.TestCase):
             old = {"product": "aethergate", "repository": "aether-shell/AetherGate", "revision": "a" * 40,
                    "image": remote.IMAGE + "@sha256:" + "b" * 64, "database_schema": "schema"}
             manifest = {**old, "revision": "c" * 40, "image": remote.IMAGE + "@sha256:" + "d" * 64}
-            if mode == "update":
+            if mode in {"update", "migrate"}:
                 Path(directory, ".aethergate-release.json").write_text(json.dumps({"manifest": old}))
                 Path(directory, ".aethergate-image.json").write_text(json.dumps({"services": {"aethergate": {"image": old["image"]}}}))
             config = {"services": {"aethergate": {"image": old["image"], "labels": {"cc.aethergate.product": "aethergate"}},
                                    "postgres": {"labels": {"cc.aethergate.product": "aethergate"}}}}
-            state = {"image": old["image"] if mode == "update" else None, "ups": []}
+            state = {"image": old["image"] if mode != "install" else None, "ups": [], "stops": []}
+            proof = {"migrations_after": [], "backup": {"path": "checkpoint.dump", "sha256": "e" * 64}}
 
             def fake_command(*args):
                 if args == ("uname", "-m"):
@@ -80,13 +82,18 @@ class TargetContractTest(unittest.TestCase):
                                         "State": {"Health": {"Status": "unhealthy" if new and unhealthy else "healthy"}}}])
                 if "psql" in args:
                     return tables
+                if "wget" in args:
+                    return '{"status":"ok"}'
+                if "stop" in args:
+                    state["stops"].append(args)
+                    return ""
                 if "up" in args:
                     state["image"] = json.loads(Path(directory, ".aethergate-image.json").read_text())["services"]["aethergate"]["image"]
                     state["ups"].append(args)
                     return ""
                 raise AssertionError(args)
 
-            with patch("remote.command", side_effect=fake_command), patch("remote.image_identity", return_value="new-id"), patch("remote.time.sleep"), patch("remote.urllib.request.urlopen") as urlopen:
+            with patch("remote.command", side_effect=fake_command), patch("remote.image_identity", return_value="new-id"), patch("remote.time.sleep"), patch("remote.urllib.request.urlopen") as urlopen, patch("remote.migration_evidence", return_value=proof), patch("remote.migration_firewall"), patch("remote.database_migrations", return_value=[]):
                 urlopen.return_value.__enter__.return_value.status = 200
                 baseline = remote.deploy({"target": target, "manifest": manifest, "action": "prepare"})
                 self.assertEqual(state["ups"], [], "prepare must not switch services")
@@ -100,9 +107,16 @@ class TargetContractTest(unittest.TestCase):
                     if unhealthy and mode == "update":
                         self.assertEqual(state["image"], old["image"])
                         self.assertEqual(json.loads(Path(directory, ".aethergate-release.json").read_text())["manifest"], old)
+                    if unhealthy and mode == "migrate":
+                        self.assertEqual(state["image"], manifest["image"], "must not start an old image on a partly migrated database")
+                        self.assertEqual(len(state["stops"]), 1)
+                        self.assertEqual(json.loads(Path(directory, ".aethergate-migration-state.json").read_text())["status"], "failed")
+                        self.assertEqual(json.loads(Path(directory, ".aethergate-release.json").read_text())["manifest"], old)
                     raise
                 self.assertTrue(result["healthy"])
                 self.assertEqual(result["manifest"], manifest)
+                if mode == "migrate":
+                    self.assertTrue(result["migration"]["traffic_blocked"])
                 self.assertTrue(all("--no-deps" in call and call[-1] == "aethergate" for call in state["ups"]))
 
     def test_install_and_update_execute_only_application(self):
@@ -120,6 +134,13 @@ class TargetContractTest(unittest.TestCase):
     def test_failed_update_restores_prior_compatible_image(self):
         with self.assertRaisesRegex(ValueError, "restored and healthy"):
             self.exercise_deployment(mode="update", unhealthy=True)
+
+    def test_migration_keeps_traffic_guard_and_records_success(self):
+        self.exercise_deployment(mode="migrate")
+
+    def test_failed_migration_stops_without_unsafe_image_rollback(self):
+        with self.assertRaisesRegex(ValueError, "candidate stopped"):
+            self.exercise_deployment(mode="migrate", unhealthy=True)
 
 
 if __name__ == "__main__":

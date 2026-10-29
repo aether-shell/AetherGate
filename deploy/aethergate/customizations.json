@@ -5,7 +5,7 @@
   "branch": "main",
   "product": "aethergate",
   "image": "ghcr.io/aether-shell/aethergate",
-  "upstream_commit": "42bc7f6cffe24bcb471608e48e66b4a0afa1f882",
-  "features": ["api-account-client-restriction", "managed-release"],
+  "upstream_commit": "dece26153621959ccd7635814f4b2d08304e681a",
+  "features": ["api-account-client-restriction", "managed-release", "moderation-complete-review"],
   "required_workflows": ["backend-ci.yml", "security-scan.yml"]
 }

@@ -90,7 +90,7 @@ def validate_manifest(manifest):
     sha(manifest.get("revision"))
     require(re.fullmatch(re.escape(IMAGE) + r"@sha256:[0-9a-f]{64}", manifest.get("image", "")), "Immutable AetherGate digest required")
     require(re.fullmatch(r"[0-9a-f]{64}", manifest.get("database_schema", "")), "Missing database schema fingerprint")
-    require(set(manifest.get("features", [])) == {"api-account-client-restriction", "managed-release"}, "Feature contract mismatch")
+    require(set(manifest.get("features", [])) == {"api-account-client-restriction", "managed-release", "moderation-complete-review"}, "Feature contract mismatch")
 
 
 def verified_manifest(run_id):

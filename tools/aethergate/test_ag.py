@@ -10,7 +10,7 @@ class ReleaseContractTest(unittest.TestCase):
         self.manifest = {"schema_version": 1, "repository": ag.REPO, "product": "aethergate",
                          "revision": "a" * 40, "image": ag.IMAGE + "@sha256:" + "b" * 64,
                          "database_schema": "c" * 64,
-                         "features": ["api-account-client-restriction", "managed-release"]}
+                         "features": ["api-account-client-restriction", "managed-release", "moderation-complete-review"]}
 
     def test_manifest_rejects_mutable_or_foreign_images(self):
         ag.validate_manifest(self.manifest)
