@@ -63,8 +63,23 @@ jobs:
             GOSUMDB=sum.golang.org
           cache-from: type=gha,scope=aethergate-amd64
           cache-to: type=gha,mode=max,scope=aethergate-amd64
-      - name: Isolated image and managed API smoke
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install isolated browser test runtime
+        run: |
+          npm install --prefix /tmp/aethergate-browser --ignore-scripts playwright@1.56.1
+          /tmp/aethergate-browser/node_modules/.bin/playwright install --with-deps chromium
+      - name: Isolated image, managed API and responsive review smoke
+        env:
+          NODE_PATH: /tmp/aethergate-browser/node_modules
         run: python3 tools/aethergate/smoke.py "$IMAGE" "$SOURCE_SHA"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: aethergate-browser-evidence
+          path: /tmp/stay-moderation-*.png
+          if-no-files-found: ignore
       - name: Sign in with temporary workflow token
         uses: docker/login-action@v3
         with:

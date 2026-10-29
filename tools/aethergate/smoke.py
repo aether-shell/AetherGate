@@ -129,6 +129,8 @@ def main():
         assert status == 200 and account["data"]["extra"]["codex_cli_only"] is False, "Disable was not persisted"
         status, _ = request(port, "/v1/responses", api_key, body, {"User-Agent": "curl/8"})
         assert status == 200, "Disabled restriction still blocks after cache refresh"
+        subprocess.run(["node", str(Path(__file__).with_name("browser_smoke.cjs"))], check=True,
+                       env={**os.environ, "AETHERGATE_SMOKE_ORIGIN": "http://" + port})
         print("PASS: image identity, setup, login, managed update APIs; API account save/deny with zero calls/allow/disable through real gateway")
     except Exception:
         subprocess.run(["docker", "logs", "--tail", "80", names[2]], check=False)
